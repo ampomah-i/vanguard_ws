@@ -1,0 +1,10 @@
+# Ignore everything
+/*
+
+# Except the src directory
+!/src
+
+# Ignore build, install, and log directories within src
+/src/build
+/src/install
+/src/log
