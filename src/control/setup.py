@@ -19,7 +19,8 @@ setup(
     license='MIT',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': ["arm_disarm_node = control.arm_disarm:main"
+        'console_scripts': ["arm_disarm_node = control.arm_disarm:main",
+"hover_node = control.hover:main"
         ],
     },
 )
