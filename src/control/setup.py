@@ -16,10 +16,10 @@ setup(
     maintainer='sarah',
     maintainer_email='sarah.mcmahon16@gmail.com',
     description='TODO: Package description',
-    license='TODO: License declaration',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [
+        'console_scripts': ["arm_disarm_node = control.arm_disarm:main"
         ],
     },
 )
