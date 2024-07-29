@@ -11,13 +11,13 @@ from geometry_msgs.msg import Point
 test_dict = {99: (23, 20, 0)}
 
 # <tag_id>,<x>,<y>,<z>
-def load_tag_locations(self, file_path):
+def load_tag_locations(file_path):
         tag_dict = {}
         with open(file_path, 'r') as file:
             for line in file:
                 parts = line.strip().split(':')
                 tag_id = int(parts[0].strip())  # Convert the tag ID to an integer
-                location = tuple(map(int, parts[1].strip()[1:-1].split(',')))  # Convert the location to a tuple of integers
+                location = tuple(map(float, parts[1].strip()[1:-1].split(',')))  # Convert the location to a tuple of integers
                 tag_dict[tag_id] = location
         return tag_dict
 
