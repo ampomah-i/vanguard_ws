@@ -5,27 +5,21 @@ import cv2 as cv
 import numpy as np
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+from geometry_msgs.msg import Point 
 
 # Predefined dictionary for AR tags
 test_dict = {99: (23, 20, 0)}
 
 # <tag_id>,<x>,<y>,<z>
-def load_tag_locations(file_path):
-    tag_dict = {}
-    with open(file_path, 'r') as file:
-        for line in file:
-            line = line.strip()
-            if line:  # Skip empty lines
-                parts = line.split(',')
-                if len(parts) == 4:  # Ensure there are exactly 4 elements
-                    try:
-                        tag_id = int(parts[0])
-                        location = tuple(map(float, parts[1:]))  # Convert coordinates to float
-                        tag_dict[tag_id] = location
-                    except ValueError as e:
-                        print(f"Error processing line '{line}': {e}")
-    return tag_dict
-
+def load_tag_locations(self, file_path):
+        tag_dict = {}
+        with open(file_path, 'r') as file:
+            for line in file:
+                parts = line.strip().split(':')
+                tag_id = int(parts[0].strip())  # Convert the tag ID to an integer
+                location = tuple(map(int, parts[1].strip()[1:-1].split(',')))  # Convert the location to a tuple of integers
+                tag_dict[tag_id] = location
+        return tag_dict
 
 class ARTagsDetectNode(Node):
 
@@ -58,7 +52,7 @@ class ARTagsDetectNode(Node):
         # Create a subscriber to the "/image_raw" topic
         self.create_subscription(Image, "/camera2/image_raw", self.receive_image_data, 10)
         # Create the bridge for converting ROS images to OpenCV images
-        self.processed_image_pub = self.create_publisher(Image, "/image_processed", 10)
+        self.position_pub = self.create_publisher(Point, "/estimated_position", 10)  # Create the publisher
 
         self.br_ = CvBridge()
 
@@ -139,9 +133,12 @@ class ARTagsDetectNode(Node):
         estimated_position = np.mean(positions, axis=0)
         # Log the estimated position
         self.get_logger().info(f"Drone estimated position: {estimated_position}")
+        
+        position_msg = Point()
+        position_msg.x, position_msg.y, position_msg.z = estimated_position
 
-        # Here you might also want to publish this position to a relevant ROS topic
-        # or use it to make decisions for drone control
+        # Publish the estimated position
+        self.position_pub.publish(position_msg)
 
 def main(args=None):
     rclpy.init(args=args)
