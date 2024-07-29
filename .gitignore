@@ -3,6 +3,7 @@
 
 # Except the src directory
 !/src
+!/flask_server
 
 # Ignore build, install, and log directories within src
 /src/build
