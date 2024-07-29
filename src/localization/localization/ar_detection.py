@@ -40,7 +40,7 @@ class ARTagsDetectNode(Node):
     dist_coeffs = np.zeros((4, 1), dtype=np.float32)  # Assuming no lens distortion
 
     # Tag size in meters (replace with actual tag size)
-    tag_size = 0.1
+    tag_size = 0.266
 
     def __init__(self, tag_file_path):
         super().__init__("camera_read_ar_tags")
