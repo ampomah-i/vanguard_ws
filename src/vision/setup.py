@@ -20,6 +20,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'line_tracking = vision.line_tracking:main',
+            'camera_publisher = vision.camera_publisher:main',
+            'camera_subscriber = vision.camera_subscriber:main',
         ],
     },
 )
