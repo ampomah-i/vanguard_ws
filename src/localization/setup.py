@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'ar_detection =localization.ar_detection:main'
         ],
     },
 )
