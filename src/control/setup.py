@@ -20,7 +20,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': ["arm_disarm_node = control.arm_disarm:main",
-"hover_node = control.hover:main"
+                            "hover_node = control.hover:main",
+                            "path_following_node = control.path_following:main",
+                            "translation_control_node = control.translation_control:main"
         ],
     },
 )

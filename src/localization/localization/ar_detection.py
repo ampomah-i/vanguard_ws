@@ -1,59 +1,25 @@
-#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import Image
+from localization.msg import TagDetection
+from cv_bridge import CvBridge
 import cv2 as cv
 import numpy as np
-from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
-from geometry_msgs.msg import Point 
 
-# Predefined dictionary for AR tags
-test_dict = {99: (23, 20, 0)}
+class ARTagDetectionNode(Node):
+    """
+    ROS 2 Node for detecting AR tags and publishing the average position of the drone relative to the tags.
+    """
 
-# <tag_id>,<x>,<y>,<z>
-def load_tag_locations(file_path):
-        tag_dict = {}
-        with open(file_path, 'r') as file:
-            for line in file:
-                parts = line.strip().split(':')
-                tag_id = int(parts[0].strip())  # Convert the tag ID to an integer
-                location = tuple(map(float, parts[1].strip()[1:-1].split(',')))  # Convert the location to a tuple of integers
-                tag_dict[tag_id] = location
-        return tag_dict
+    def __init__(self):
+        super().__init__("ar_tag_detection_node")
 
-class ARTagsDetectNode(Node):
+        # Create a subscriber to the camera image topic
+        self.create_subscription(Image, "/image_raw", self.receive_image_data, 10)
+        # Create a publisher for AR tag detection
+        self.detection_pub = self.create_publisher(TagDetection, "/ar_tag_detections", 10)
 
-    br_: CvBridge
-    LIBRARY_: cv.aruco.Dictionary
-    PARAMETERS_: cv.aruco.DetectorParameters
-    DETECTOR_: cv.aruco.ArucoDetector
-    TAG_LOCATIONS_: dict
-    TAG_IDS_: set
-
-    # Camera intrinsic parameters (replace with actual calibration data)
-    camera_matrix = np.array([
-        [1000, 0, 320],  # fx, 0, cx
-        [0, 1000, 240],  # 0, fy, cy
-        [0, 0, 1]        # 0, 0, 1
-    ], dtype=np.float32)
-    
-    dist_coeffs = np.zeros((4, 1), dtype=np.float32)  # Assuming no lens distortion
-
-    # Tag size in meters (replace with actual tag size)
-    tag_size = 0.266
-
-    def __init__(self, tag_file_path):
-        super().__init__("camera_read_ar_tags")
-
-        # Load tag locations from the file
-        self.TAG_LOCATIONS_ = load_tag_locations(tag_file_path)
-        self.TAG_IDS_ = set(self.TAG_LOCATIONS_.keys())
-
-        # Create a subscriber to the "/image_raw" topic
-        self.create_subscription(Image, "/camera2/image_raw", self.receive_image_data, 10)
-        # Create the bridge for converting ROS images to OpenCV images
-        self.position_pub = self.create_publisher(Point, "/estimated_position", 10)  # Create the publisher
-
+        # Initialize the bridge for converting ROS images to OpenCV images
         self.br_ = CvBridge()
 
         # Load the predefined AR tag dictionary
@@ -61,41 +27,67 @@ class ARTagsDetectNode(Node):
         self.PARAMETERS_ = cv.aruco.DetectorParameters()
         self.DETECTOR_ = cv.aruco.ArucoDetector(self.LIBRARY_, self.PARAMETERS_)
 
-        self.get_logger().info("\nSuccessfully launched the camera display module!")
+        self.get_logger().info("AR tag detection node launched!")
+
+        # Camera intrinsic parameters: TO DO
+        self.camera_matrix = np.array([
+            [1000, 0, 320],  # fx, 0, cx
+            [0, 1000, 240],  # 0, fy, cy
+            [0, 0, 1]        # 0, 0, 1
+        ], dtype=np.float32)
+
+        self.dist_coeffs = np.zeros((4, 1), dtype=np.float32)  # Assuming no lens distortion
+
+        # Tag size in meters: TO DO
+        self.tag_size = 0.266
 
     def receive_image_data(self, msg: Image):
+        """
+        Callback function to process the image and detect AR tags.
+        """
         # Convert the ROS Image message to an OpenCV image
         img = self.br_.imgmsg_to_cv2(msg)
 
         # Detect AR tags in the grayscale version of the image
-        markerCorners, markerIDs, rejectedCandidates = self.DETECTOR_.detectMarkers(cv.cvtColor(img, cv.COLOR_BGR2GRAY))
+        markerCorners, markerIDs, _ = self.DETECTOR_.detectMarkers(cv.cvtColor(img, cv.COLOR_BGR2GRAY))
 
         if markerIDs is not None:
-            # Initialize data structures for localization
-            detected_tags = {}
-            
+            detected_positions = []
+            detected_ids = []
+
             # Process each detected marker
             for markerID, corners in zip(markerIDs, markerCorners):
                 tag_id = markerID[0]
-                if tag_id in self.TAG_IDS_:
-                    # Compute tag location and add to detected_tags
-                    location = self.TAG_LOCATIONS_[tag_id]
-                    detected_tags[tag_id] = self.compute_tag_position(corners, location)
-            
-            # Perform localization using detected tags
-            if detected_tags:
-                self.localize_drone(detected_tags)
+                pose = self.compute_camera_position(corners)
+                detected_positions.append(pose)
+                detected_ids.append(tag_id)
+
+            # Compute the average position
+            avg_position = np.mean(detected_positions, axis=0)
+
+            # Create the custom message
+            detection_msg = TagDetection()
+            detection_msg.id = -1  # Use -1 to indicate it's an average position
+            detection_msg.position.header.stamp = self.get_clock().now().to_msg()
+            detection_msg.position.header.frame_id = 'camera'
+            detection_msg.position.pose.position.x = avg_position[0]
+            detection_msg.position.pose.position.y = avg_position[1]
+            detection_msg.position.pose.position.z = avg_position[2]
+
+            # Optionally log the detected IDs and average position
+            self.get_logger().info(f"Detected AR Tags: {detected_ids}")
+            self.get_logger().info(f"Average Position: {avg_position}")
+
+            # Publish the detection message
+            self.detection_pub.publish(detection_msg)
         else:
-            self.get_logger().info("\nNo AR Tags detected.")
+            self.get_logger().info("No AR Tags detected.")
 
-    def compute_tag_position(self, corners, known_location):
+    def compute_camera_position(self, corners):
         """
-        Compute the position of the tag based on detected corners.
+        Compute the position of the camera (drone) relative to the detected AR tag.
         """
-        # Convert corners to numpy array
         corners = np.array(corners, dtype=np.float32)
-
-        # Define the 3D coordinates of the tag corners in the tag's coordinate system
         tag_corners_3d = np.array([
             [-self.tag_size / 2, -self.tag_size / 2, 0],
             [self.tag_size / 2, -self.tag_size / 2, 0],
@@ -103,54 +95,20 @@ class ARTagsDetectNode(Node):
             [-self.tag_size / 2, self.tag_size / 2, 0]
         ], dtype=np.float32)
 
-        # Estimate the pose of the tag
+        # Solve for the pose of the tag
         _, rvec, tvec = cv.solvePnP(tag_corners_3d, corners, self.camera_matrix, self.dist_coeffs)
-
-        # Convert rotation vector to rotation matrix
-        R, _ = cv.Rodrigues(rvec)
-
-        # Compute the tag position in the global frame
-        tag_position_camera = tvec.flatten()
-        tag_position_global = np.dot(R, tag_position_camera)
-
-        # Adjust based on the known location
-        tag_position_global += np.array(known_location, dtype=np.float32)
-
-        return tuple(tag_position_global)
-
-    def localize_drone(self, detected_tags):
-        """
-        Estimate the drone's position based on detected tag positions.
-        """
-        if not detected_tags:
-            self.get_logger().info("No detected tags for localization.")
-            return
-
-        # Extract positions of detected tags
-        positions = np.array(list(detected_tags.values()))
-
-        # Example method: Average position of all detected tags
-        estimated_position = np.mean(positions, axis=0)
-        # Log the estimated position
-        self.get_logger().info(f"Drone estimated position: {estimated_position}")
         
-        position_msg = Point()
-        position_msg.x, position_msg.y, position_msg.z = estimated_position
+        # tvec is the translation vector representing the position of the camera in the tag's coordinate system
+        camera_position = tvec.flatten()
 
-        # Publish the estimated position
-        self.position_pub.publish(position_msg)
+        return tuple(camera_position)
+
 
 def main(args=None):
     rclpy.init(args=args)
-
-    # Path to the file containing tag locations
-    tag_file_path = '/home/sarah/vanguard_ws/src/localization/localization/tags_locations.txt'
-
-    # Create and spin the node
-    node = ARTagsDetectNode(tag_file_path)
+    node = ARTagDetectionNode()
     rclpy.spin(node)
-
-    # Shutdown the rclpy library
+    node.destroy_node()
     rclpy.shutdown()
 
 if __name__ == "__main__":

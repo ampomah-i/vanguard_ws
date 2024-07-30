@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ar_detection =localization.ar_detection:main'
+            'ar_detection_node =localization.ar_detection:main',
+            'position_estimate_node = localization.global_pose_estimation:main'
         ],
     },
 )
