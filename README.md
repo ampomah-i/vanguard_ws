@@ -135,8 +135,8 @@ vanguard_ws/
 
 ## Authors
 
-- Immanuel
-- Contributors: [List of contributors]
+- Immanuel Ampomah Mensah
+- Contributors: Sarah McMahon, Joshua Huang, Smruti Suresh, Noreen Hussein, Sakina Saidi
 
 ## License
 
