@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This project is designed to implement and test drone control and localization functionalities using ROS 2 and PX4. This includes path following, AR tag detection, and position estimation.
+This project is designed to implement and test drone control and localization functionalities using ROS 2 and PX4 using a Raspberry Pi 4 companion computer. This includes path following, AR tag detection, and position estimation.
 
 ## Directory Structure
 
