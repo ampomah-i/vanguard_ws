@@ -8,9 +8,6 @@ This project is designed to implement and test drone control and localization fu
 
 ```
 vanguard_ws/
-├── build/                  # Build files
-├── install/                # Installation files
-├── log/                    # Log files
 ├── src/
 │   ├── control/            # Control package
 │   │   ├── control/
