@@ -23,7 +23,7 @@ class ArmingNode(Node):
         # Inform about node initialization
         self.get_logger().info("Arming node initialized")
 
-    def publish_vehicle_command(self, command, param1=0.0, param2=0.0, param7=0.0):
+    def publish_vehicle_command(self, command, param1=0.0, param2=0.0, param7=2.0):
         """
         Publish a vehicle command to the PX4 system.
         """
@@ -58,6 +58,20 @@ class ArmingNode(Node):
         self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 0.0)
         self.get_logger().info("Disarm command sent")
 
+    def takeoff(self):
+        """
+        Send a disarm command to the drone.
+        """
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_TAKEOFF)
+        self.get_logger().info("Takeoff command sent")
+    
+    def land(self):
+        """
+        Send a disarm command to the drone.
+        """
+        self.publish_vehicle_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+        self.get_logger().info("Land command sent")
+
     def destroy_node(self):
         """
         Ensure resources are cleaned up on shutdown.
@@ -79,6 +93,10 @@ def main(args=None):
                 arm_disarm_node.arm()
             elif user_input == "disarm":
                 arm_disarm_node.disarm()
+            elif user_input == "takeoff":
+                arm_disarm_node.takeoff()
+            elif user_input == "land":
+                arm_disarm_node.land()
             else:
                 print("Invalid input. Please type 'arm' or 'disarm'.")
     except KeyboardInterrupt:
