@@ -69,7 +69,7 @@ vanguard_ws/
 ### Path Following
 
 1. **Configure Path**:
-   - Edit the `ar_tag_positions.yaml` file in `src/localization/localization/config/` to define AR tag positions.
+   - Edit the `path.yaml` file in `src/control/control/` to define paths to follow.
 
 2. **Run Path Following Node**:
    ```sh
@@ -77,6 +77,8 @@ vanguard_ws/
    ```
 
 ### AR Tag Detection
+0. **Define AR Tag Locations for Localization**:
+   - Edit the `ar_tag_positions.yaml` file in `src/localization/localization/config/` to define AR tag positions.
 
 1. **Run AR Tag Detection Node**:
    ```sh
