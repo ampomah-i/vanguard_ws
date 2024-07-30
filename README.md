@@ -13,6 +13,9 @@ vanguard_ws/
 │   │   ├── control/
 │   │   │   ├── __init__.py
 │   │   │   ├── path_following.py
+│   │   │   ├── hover.py
+│   │   │   ├── arm_disarm.py
+│   │   │   ├── translation_control.py
 │   │   ├── setup.py
 │   ├── localization/       # Localization package
 │   │   ├── localization/
