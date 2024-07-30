@@ -38,6 +38,8 @@ vanguard_ws/
 - Required ROS 2 packages: `px4_msgs`, `sensor_msgs`, `geometry_msgs`
 - OpenCV
 - YAML
+- ROS2 V4L2 Camera Node
+- DepthAI ROS Driver
 
 ## Installation Instructions
 
@@ -102,6 +104,18 @@ vanguard_ws/
 - `path_following.py`: 
   - Implements the path following functionality using trajectory setpoints.
   - Reads path waypoints from a YAML file and follows the defined path.
+ 
+- `arm_disarm.py`:
+  - Implements arming, disarming, takeoff and landing of the drone.
+  - Publishes appropriate commands to arm and disarm the drone.
+
+- `trajectory_control.py`:
+  - Implements trajectory control functionalities.
+  - Allows setting custom trajectories for the drone to follow.
+
+- `hover.py`:
+  - Implements hover functionality.
+  - Maintains the drone's position at a specified point.
 
 ### Localization Package
 
