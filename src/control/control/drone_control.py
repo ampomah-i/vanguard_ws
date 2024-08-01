@@ -1,5 +1,12 @@
+import sys
+import os
+import yaml
+
+# Add the `src` directory to the Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSDurabilityPolicy, QoSReliabilityPolicy
 from geometry_msgs.msg import Point, PoseStamped
 from nav_msgs.msg import Path
 from px4_msgs.msg import (
@@ -21,6 +28,20 @@ from common.coordinate_transforms import (
     quaternion_get_yaw
 )
 
+# QoS settings
+qos_profile_sub = QoSProfile(
+    history=QoSHistoryPolicy.KEEP_LAST,
+    durability=QoSDurabilityPolicy.VOLATILE,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+    depth=10
+)
+
+qos_profile_pub = QoSProfile(
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    reliability=QoSReliabilityPolicy.BEST_EFFORT,
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1
+)
 
 class State:
     PREFLIGHT = 0
@@ -33,55 +54,34 @@ class State:
     LIMBO = 7
     ERROR = 8
 
-
 class DroneControl(Node):
     def __init__(self):
         super().__init__('drone_control')
         self.get_logger().info('Init Node')
         self.get_logger().info('State transitioned to PREFLIGHT')
 
-        # QoS settings
-        qos_profile = rclpy.qos.QoSProfile(
-            history=rclpy.qos.QoSHistoryPolicy.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
-            depth=5,
-            durability=rclpy.qos.QoSDurabilityPolicy.RMW_QOS_POLICY_DURABILITY_VOLATILE
-        )
-
         # Declare default parameters values
         self.declare_parameter('frequency', 100)
+        self.declare_parameter('waypoints_file', 'path.yaml')
         frequency = self.get_parameter('frequency').get_parameter_value().integer_value
+        waypoints_file = self.get_parameter('waypoints_file').get_parameter_value().string_value
+
+        # Load waypoints from YAML file
+        self.waypoints = self.load_waypoints(waypoints_file)
+        self.current_waypoint_index = 0
 
         # Create publishers
-        self.offboard_control_publisher_ = self.create_publisher(OffboardControlMode, '/fmu/in/offboard_control_mode', 10)
-        self.trajectory_setpoint_publisher_ = self.create_publisher(TrajectorySetpoint, '/fmu/in/trajectory_setpoint', 10)
-        self.vehicle_command_publisher_ = self.create_publisher(VehicleCommand, '/fmu/in/vehicle_command', 10)
-        self.home_position_publisher_ = self.create_publisher(Point, '/home_position', 10)
-
+        self.offboard_control_publisher_ = self.create_publisher(OffboardControlMode, '/fmu/in/offboard_control_mode', qos_profile_pub)
+        self.trajectory_setpoint_publisher_ = self.create_publisher(TrajectorySetpoint, '/fmu/in/trajectory_setpoint', qos_profile_pub)
+        self.vehicle_command_publisher_ = self.create_publisher(VehicleCommand, '/fmu/in/vehicle_command', qos_profile_pub)
+        self.home_position_publisher_ = self.create_publisher(Point, '/home_position', qos_profile_pub)
+        self.waypoints_publisher_ = self.create_publisher(Path, '/drone/waypoints', qos_profile_pub)
+        
         # Create subscribers
-        self.vehicle_odometry_subscriber_ = self.create_subscription(
-            VehicleOdometry,
-            '/fmu/out/vehicle_odometry',
-            self.vehicle_odometry_callback,
-            qos_profile
-        )
-        self.vehicle_control_mode_subscriber_ = self.create_subscription(
-            VehicleControlMode,
-            '/fmu/out/vehicle_control_mode',
-            self.vehicle_control_mode_callback,
-            qos_profile
-        )
-        self.path_subscriber_ = self.create_subscription(
-            Path,
-            '/f2c_path',
-            self.path_callback,
-            qos_profile
-        )
-        self.vehicle_pose_subscriber_ = self.create_subscription(
-            PoseStamped,
-            '/vehicle_pose',
-            self.pose_callback,
-            qos_profile
-        )
+        self.vehicle_odometry_subscriber_ = self.create_subscription(VehicleOdometry, '/fmu/out/vehicle_odometry', self.vehicle_odometry_callback, qos_profile_sub)
+        self.vehicle_control_mode_subscriber_ = self.create_subscription(VehicleControlMode, '/fmu/out/vehicle_control_mode', self.vehicle_control_mode_callback, qos_profile_sub)
+        self.path_subscriber_ = self.create_subscription(Path, '/f2c_path', self.path_callback, qos_profile_sub)
+        self.vehicle_pose_subscriber_ = self.create_subscription(PoseStamped, '/vehicle_pose', self.pose_callback, qos_profile_sub)
 
         # Create timer
         self.timer_ = self.create_timer(1.0 / frequency, self.timer_callback)
@@ -104,6 +104,8 @@ class DroneControl(Node):
         self.vehicle_position_ros_ = Point()
         self.path_moved_to_drone_local_coordinates_ = Point()
         self.velocity_setpoint_ = Point()
+        self.current_path = None
+        self.current_position = None
 
         # Flags
         self.mutex_ = threading.Lock()
@@ -114,10 +116,17 @@ class DroneControl(Node):
         self.flag_vehicle_odometry_ = False
         self.flag_take_off_position = False
 
+    def load_waypoints(self, filepath):
+        with open(filepath, 'r') as file:
+            data = yaml.safe_load(file)
+        waypoints = data.get('paths', {}).get('1', [])
+        return waypoints
+
     def vehicle_odometry_callback(self, msg):
         px4_ned = np.array([msg.position[0], msg.position[1], msg.position[2]])
         ros_enu = ned_to_enu(px4_ned)
         self.vehicle_position_.x, self.vehicle_position_.y, self.vehicle_position_.z = ros_enu
+        self.current_position = ros_enu
 
     def vehicle_control_mode_callback(self, msg):
         self.vehicle_status_ = msg
@@ -125,6 +134,8 @@ class DroneControl(Node):
     def path_callback(self, msg):
         self.f2c_path_ros_ = msg
         self.flag_mission_ = True
+        self.current_path = msg.poses
+        self.get_logger().info(f'Received new path with {len(self.current_path)} waypoints')
 
     def pose_callback(self, msg):
         self.vehicle_position_ros_ = msg.pose.position
@@ -237,12 +248,21 @@ class DroneControl(Node):
         
         self.flag_take_off_position = True
 
-    def check_drone_startup_position(self):
-        tolerance_xy = 5.0
-        tolerance_z = 1.5
-        return (abs(self.vehicle_position_ros_.x) < tolerance_xy and
-                abs(self.vehicle_position_ros_.y) < tolerance_xy and
-                abs(self.vehicle_position_ros_.z) < tolerance_z)
+    def publish_waypoints(self):
+        waypoints = self.load_waypoints('path.yaml')
+        path_msg = Path()
+        path_msg.header.frame_id = 'map'  # Set the frame id appropriately
+        path_msg.header.stamp = self.get_clock().now().to_msg()
+        
+        for wp in waypoints:
+            pose = PoseStamped()
+            pose.pose.position.x = wp['x']
+            pose.pose.position.y = wp['y']
+            pose.pose.position.z = wp['z']
+            path_msg.poses.append(pose)
+        
+        self.waypoints_publisher_.publish(path_msg)
+        self.get_logger().info('Published waypoints')
 
     def calculate_velocity_setpoint(self):
         velocity_setpoint = Point()
@@ -281,11 +301,9 @@ class DroneControl(Node):
             self.home_position_publisher_.publish(self.home_position_ros_)
 
         if self.current_state_ == State.PREFLIGHT:
-            if self.flag_vehicle_odometry_ and self.check_drone_startup_position():
+            if self.flag_vehicle_odometry_:
                 self.set_take_off_waypoint()
                 self.current_state_ = State.IDLE
-            else:
-                self.get_logger().error(f'Drone is not at startup position! x: {self.vehicle_position_ros_.x} y: {self.vehicle_position_ros_.y} z: {self.vehicle_position_ros_.z}')
 
         elif self.current_state_ == State.IDLE:
             self.publish_offboard_control_mode()
@@ -330,28 +348,17 @@ class DroneControl(Node):
             self.check_pilot_state_switch()
             self.publish_offboard_control_mode()
 
-            if self.flag_next_waypoint_:
-                tf_q = [self.f2c_path_ros_.poses[self.global_i_].pose.orientation.x,
-                        self.f2c_path_ros_.poses[self.global_i_].pose.orientation.y,
-                        self.f2c_path_ros_.poses[self.global_i_].pose.orientation.z,
-                        self.f2c_path_ros_.poses[self.global_i_].pose.orientation.w]
-                roll, pitch, yaw_setpoint = quaternion_to_euler(tf_q)
-                self.path_moved_to_drone_local_coordinates_ = self.path_update_to_takeoff_position(
-                    self.f2c_path_ros_.poses[self.global_i_].pose.position.x,
-                    self.f2c_path_ros_.poses[self.global_i_].pose.position.y,
-                    self.f2c_path_ros_.poses[self.global_i_].pose.position.z
-                )
-                self.velocity_setpoint_ = self.calculate_velocity_setpoint()
+            if self.flag_next_waypoint_ and self.current_waypoint_index < len(self.waypoints):
+                next_waypoint = self.waypoints[self.current_waypoint_index]
                 self.publish_trajectory_setpoint(
-                    [self.path_moved_to_drone_local_coordinates_.x,
-                     self.path_moved_to_drone_local_coordinates_.y,
-                     self.path_moved_to_drone_local_coordinates_.z],
-                    [self.velocity_setpoint_.x, self.velocity_setpoint_.y, self.velocity_setpoint_.z],
-                    yaw_setpoint
+                    [next_waypoint['x'], next_waypoint['y'], next_waypoint['z']],
+                    [0.1, 0.1, 0.0],  # Example velocity, adjust as needed
+                    0.0  # Example yaw, adjust as needed
                 )
                 self.flag_next_waypoint_ = False
-            else:
-                if self.reached_setpoint(self.path_moved_to_drone_local_coordinates_, self.vehicle_position_, self.position_tolerance_):
+            elif self.current_waypoint_index < len(self.waypoints):
+                next_waypoint = self.waypoints[self.current_waypoint_index]
+                if self.reached_setpoint(Point(x=next_waypoint['x'], y=next_waypoint['y'], z=next_waypoint['z']), self.vehicle_position_, self.position_tolerance_):
                     if not self.has_executed_:
                         self.nonBlockingWait(0.001)
                         self.has_executed_ = True
@@ -360,9 +367,9 @@ class DroneControl(Node):
                         self.flag_timer_done_ = False
                         self.has_executed_ = False
                         self.flag_next_waypoint_ = True
-                        self.global_i_ += 1
+                        self.current_waypoint_index += 1
 
-                        if self.global_i_ >= len(self.f2c_path_ros_.poses):
+                        if self.current_waypoint_index >= len(self.waypoints):
                             self.current_state_ = State.RTL
                             self.get_logger().info('State transitioned to LAND')
 
@@ -394,7 +401,6 @@ def main(args=None):
     rclpy.spin(drone_control)
     drone_control.destroy_node()
     rclpy.shutdown()
-
 
 if __name__ == '__main__':
     main()
